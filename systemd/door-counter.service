@@ -1,0 +1,17 @@
+[Unit]
+Description=Door counter
+After=network-online.target time-sync.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=doorcounter
+Group=doorcounter
+SupplementaryGroups=video
+StateDirectory=door-counter
+ExecStart=/usr/bin/python3 /opt/door-counter/counter.py --config /etc/door-counter/counter.ini
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
