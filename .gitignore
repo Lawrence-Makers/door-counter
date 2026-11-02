@@ -1,0 +1,13 @@
+# Local settings: contain the sheet URL and secret
+counter.ini
+
+# Event database
+*.db
+*.db-wal
+*.db-shm
+
+# Generated test videos
+tests/videos/
+
+__pycache__/
+*.pyc
