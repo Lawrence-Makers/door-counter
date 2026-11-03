@@ -80,7 +80,10 @@ function doPost(e) {
     var last = events.length ? events[events.length - 1] : null;
     updateStatus_(getSheet_(ss, STATUS, STATUS_HEADERS, []), device, last);
 
-    return json_({ ok: true, added: fresh.length, received: events.length });
+    // The sheet's address and name go back to the counter, which shows them
+    // on its preview page.
+    return json_({ ok: true, added: fresh.length, received: events.length,
+                   sheet_url: ss.getUrl(), sheet_name: ss.getName() });
   } catch (err) {
     return json_({ ok: false, error: String(err) });
   } finally {

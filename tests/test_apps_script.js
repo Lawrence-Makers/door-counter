@@ -43,7 +43,8 @@ Sheet.prototype.getRange = function (r, c, nr, nc) {
 };
 
 const sheets = {};
-const ss = { getSheetByName: n => sheets[n] || null, insertSheet: n => (sheets[n] = new Sheet(n)) };
+const ss = { getSheetByName: n => sheets[n] || null, insertSheet: n => (sheets[n] = new Sheet(n)),
+  getUrl: () => 'https://docs.google.com/spreadsheets/d/MOCK/edit', getName: () => 'Mock counts' };
 const ctx = {
   SpreadsheetApp: { getActiveSpreadsheet: () => ss, openById: () => ss },
   LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
@@ -65,7 +66,11 @@ pass('wrong secret rejected');
 
 const batch = [ev('a', 'start', '2026-11-01', 0), ev('b', 'in', '2026-11-01', 1),
   ev('c', 'in', '2026-11-01', 2), ev('d', 'out', '2026-11-01', 1)];
-assert.strictEqual(post({ secret: 's3cret', device: 'front', events: batch }).added, 4);
+const first = post({ secret: 's3cret', device: 'front', events: batch });
+assert.strictEqual(first.added, 4);
+assert.strictEqual(first.sheet_name, 'Mock counts');
+assert.ok(first.sheet_url.endsWith('/MOCK/edit'));
+pass('reply includes the sheet name and link');
 assert.strictEqual(post({ secret: 's3cret', device: 'front', events: batch }).added, 0);
 pass('repeated upload of the same events is skipped');
 
