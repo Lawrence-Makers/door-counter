@@ -37,6 +37,12 @@ CASES = [
      {"camera.rotate": "270"}, (3, 2)),
     ("zones mode, camera on its side, rotate not set", "zones_ccw.avi",
      {"camera.rotate": "0"}, (0, 0)),
+    # zones_background.avi: 3 passes each way in the lower part of the view,
+    # plus frequent motion across the top (people beyond the door).
+    ("zones mode, top cropped off ignores motion beyond the door", "zones_background.avi",
+     {"camera.crop_top": "0.35"}, (3, 3)),
+    ("zones mode, crop on all sides", "zones_background.avi",
+     {"camera.crop_top": "0.35", "camera.crop_left": "0.1", "camera.crop_right": "0.9"}, (3, 3)),
     # legs.avi: 4 people LR, 4 RL, plus one who steps in and back out.
     # Expected includes two known limitations: the person who stops
     # mid-stride for 1.5 s counts twice (one extra in), and the step-in/
@@ -77,6 +83,12 @@ def main():
     ok = got[0] + got[1] > 13
     failed += not ok
     print(f"{'PASS' if ok else 'FAIL'}  zones mode, legs only, gap off double-counts: "
+          f"in/out {got[0]}/{got[1]}")
+    # Without the crop, the motion beyond the door throws the counts off.
+    got = run_case("zones_background.avi", {})
+    ok = got != (3, 3)
+    failed += not ok
+    print(f"{'PASS' if ok else 'FAIL'}  zones mode, no crop is fooled by motion beyond the door: "
           f"in/out {got[0]}/{got[1]}")
     print("all passed" if not failed else f"{failed} failed")
     return 1 if failed else 0
