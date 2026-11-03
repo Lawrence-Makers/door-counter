@@ -51,7 +51,9 @@ class FakeAppsScript:
                     seen = {e["uid"] for e in fake.received}
                     new = [e for e in body["events"] if e["uid"] not in seen]
                     fake.received.extend(new)
-                    fake.last = {"ok": True, "added": len(new)}
+                    fake.last = {"ok": True, "added": len(new),
+                                 "sheet_url": "https://docs.google.com/spreadsheets/d/TEST/edit",
+                                 "sheet_name": "Test counts"}
                 self.send_response(302)
                 self.send_header("Location", "/echo")
                 self.end_headers()
@@ -178,6 +180,8 @@ def test_upload(tmp):
     up.flush()
     check(app.store.unsent_count() == 0 and len(fake.received) == 5,
           "queued events upload in batches after recovery")
+    check(up.sheet_name == "Test counts" and up.sheet_url.endswith("/TEST/edit"),
+          "sheet name and link reported back by the script are kept")
     cfg.set("upload", "secret", "wrong")
     app.count("LR")
     C.Uploader(cfg, app.store, threading.Event()).flush()

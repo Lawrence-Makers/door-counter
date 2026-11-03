@@ -584,6 +584,8 @@ class Uploader(threading.Thread):
         self.stop = stop
         self.last_ok = None
         self.last_error = None
+        self.sheet_url = None   # reported back by the sheet's script
+        self.sheet_name = None
 
     def run(self):
         while not self.stop.is_set():
@@ -618,6 +620,8 @@ class Uploader(threading.Thread):
                 return
             self.store.mark_sent([r["uid"] for r in rows])
             self.last_ok = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            self.sheet_url = resp.get("sheet_url") or self.sheet_url
+            self.sheet_name = resp.get("sheet_name") or self.sheet_name
             self.last_error = None
             log.info("Uploaded %d events (sheet added %s)", len(rows), resp.get("added"))
             if len(rows) < self.batch:
@@ -642,14 +646,17 @@ pre{background:#222;padding:8px;overflow:auto}
 <p id="r" style="display:none">Counter missed someone?
 <button id="bi" onclick="correct('in')">+1 in</button>
 <button id="bo" onclick="correct('out')">+1 out</button> <span id="rm"></span></p>
+<p id="sh"></p>
 <pre id="s">loading...</pre>
 <script>
 const CAP={
- zones:'Left: camera with the two edge zones and how much of each shows motion '+
-       '(yellow = idle, green = active), plus the counter state. '+
-       'Right: what the detector sees as moving.',
- line:'Left: camera with counting line (red), band edges (yellow), tracked objects (green). '+
-      'Right: what the detector sees as moving.'};
+ zones:'Left: the camera view. Only the area outlined in white is analysed; anything '+
+       'dimmed is ignored. Inside it, the two edge zones show how much of each has motion '+
+       '(yellow = idle, green = active), with the counter state above. '+
+       'Right: what the detector sees as moving (white), inside the outlined area.',
+ line:'Left: the camera view. Only the area outlined in white is analysed; anything '+
+      'dimmed is ignored. Inside it: counting line (red), band edges (yellow), tracked '+
+      'objects (green). Right: what the detector sees as moving (white).'};
 async function correct(kind){
  const m=document.getElementById('rm'), bs=[document.getElementById('bi'),document.getElementById('bo')];
  bs.forEach(b=>b.disabled=true); m.textContent='...';
@@ -659,6 +666,11 @@ async function correct(kind){
  setTimeout(()=>bs.forEach(b=>b.disabled=false),1000);}  // guard against double clicks
 async function poll(){try{const r=await fetch('/status');const s=await r.json();
 document.getElementById('c').textContent=CAP[s.mode]||'';
+const sh=document.getElementById('sh');
+if(s.sheet_url){sh.textContent='Writing to sheet: ';const a=document.createElement('a');
+ a.href=s.sheet_url;a.target='_blank';a.style.color='#8cf';a.textContent=s.sheet_name||s.sheet_url;sh.appendChild(a);}
+else{sh.textContent=s.uploading?'Sheet: shown here after the first successful upload':
+ 'Not uploading to a sheet (no [upload] url set, or started with --no-upload)';}
 document.getElementById('r').style.display=s.manual_corrections_allowed?'':'none';
 document.getElementById('s').textContent=JSON.stringify(s,null,2);}catch(e){}
 setTimeout(poll,2000);}poll();
@@ -864,6 +876,9 @@ class App:
         s.update({
             "manual_corrections_allowed": self.allow_corrections,
             "unsent_events": self.store.unsent_count(),
+            "uploading": self.uploader is not None,
+            "sheet_name": self.uploader.sheet_name if self.uploader else None,
+            "sheet_url": self.uploader.sheet_url if self.uploader else None,
             "last_upload_ok": self.uploader.last_ok if self.uploader else None,
             "last_upload_error": self.uploader.last_error if self.uploader else None,
         })
