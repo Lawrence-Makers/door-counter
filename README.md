@@ -130,9 +130,11 @@ With the camera plugged in, on the device:
 python3 counter.py --config counter.ini --db ~/test.db --no-upload
 ```
 
-Open `http://<device-ip>:8080/`. The right half of the preview is what the
-detector sees as moving (white); the status box below shows counts and frames
-per second.
+Open `http://<device-ip>:8080/`. The left half of the preview is the whole
+camera view: the area being analysed (the crop) is outlined in white and
+anything outside it is dimmed and ignored. The right half shows what the
+detector sees as moving (white), within the crop. The status line below the
+image and the status box show counts and frames per second.
 
 `counter.ini` starts with a short list of the settings you'll usually
 change, and each setting has a comment saying what it does and which way to
@@ -140,6 +142,10 @@ adjust it. The main ones:
 
 - `[camera] rotate`: if the camera is mounted on its side, set it so people
   move left/right in the preview.
+- `[camera] crop_left` / `crop_right` / `crop_top` / `crop_bottom`: ignore
+  parts of the view, e.g. `crop_top = 0.3` to ignore people walking past
+  beyond the door. Whatever stays inside the crop is what needs a steady
+  background; the zones sit at its left and right edges.
 - `direction_in`: `left_to_right` or `right_to_left`, as seen in the preview.
 - `same_direction_gap_seconds`: 1.0 if the camera sees only legs (mounted
   near the floor), 0.3 if it sees the body (waist height).
@@ -265,7 +271,8 @@ Apps Script test); no camera needed.
 
 - `make_videos.py` generates synthetic videos with known answers: walking
   figures for line mode, a body filling the frame for zones mode, sideways
-  copies for `rotate`, and a legs-only view for a camera near the floor.
+  copies for `rotate`, a view with motion beyond the door for the crop
+  settings, and a legs-only view for a camera near the floor.
 - `test_counts.py` runs the counter on each video and checks the counts.
 - `test_logic.py` checks day boundaries and the 4am reset, restarts, manual
   corrections, database cleanup, and uploads against a fake endpoint that

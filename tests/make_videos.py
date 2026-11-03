@@ -174,6 +174,50 @@ def make_zones():
         w.release()
 
 
+def make_zones_background():
+    """Body passes in the lower part of the frame; something else (people
+    beyond the door) crosses the top 80 px left to right, often. With the top
+    cropped off only the real passes should count."""
+    PW, TOP = 230, 90
+    rng = np.random.default_rng(4)
+    bg = cv2.GaussianBlur(rng.integers(90, 170, (H, W, 3)).astype(np.uint8), (7, 7), 0)
+    tex = cv2.GaussianBlur(rng.integers(20, 70, (H - TOP, PW, 3)).astype(np.uint8), (5, 5), 0)
+    out = writer("zones_background.avi")
+    state = {"far": None}
+
+    def emit(x=None):
+        f = np.clip(bg.astype(np.int16) + rng.integers(-4, 5, bg.shape), 0, 255).astype(np.uint8)
+        # Background walker: a 70x80 block crossing the top, left to right,
+        # starting every 70 frames.
+        state["far"] = -70 if state["far"] is None or state["far"] > W else state["far"] + 8
+        fx = int(state["far"])
+        a, b = max(0, fx), min(W, fx + 70)
+        if b > a:
+            f[0:80, a:b] = (30, 30, 30)
+        if x is not None:
+            x = int(x)
+            a, b = max(0, x), min(W, x + PW)
+            if b > a:
+                f[TOP:, a:b] = tex[:, a - x:b - x]
+        out.write(f)
+
+    def walk(a, b, step):
+        n = max(1, int(abs(b - a) / step))
+        for i in range(n + 1):
+            emit(a + (b - a) * i / n)
+
+    for _ in range(90):
+        emit()
+    for _ in range(3):              # three real passes each way, spaced out
+        walk(-PW, W, 12)
+        for _ in range(40):
+            emit()
+        walk(W, -PW, 12)
+        for _ in range(40):
+            emit()
+    out.release()
+
+
 # --------------------------------------------------------------------------
 
 def make_legs():
@@ -239,7 +283,7 @@ def make_legs():
 
 
 if __name__ == "__main__":
-    for fn in (make_line, make_zones, make_legs):
+    for fn in (make_line, make_zones, make_zones_background, make_legs):
         fn()
         print("made", fn.__name__[5:])
     print("videos in", OUT)

@@ -59,6 +59,10 @@ DEFAULTS = {
         "fps": "30",
         "process_width": "160",
         "rotate": "0",
+        "crop_left": "0.0",
+        "crop_right": "1.0",
+        "crop_top": "0.0",
+        "crop_bottom": "1.0",
     },
     "counting": {
         "mode": "zones",
@@ -127,6 +131,11 @@ def load_config(path):
         raise SystemExit("counting.mode must be zones or line")
     if cp.getint("camera", "rotate") not in ROTATIONS:
         raise SystemExit("camera.rotate must be 0, 90, 180 or 270")
+    for lo, hi in (("crop_left", "crop_right"), ("crop_top", "crop_bottom")):
+        a, b = cp.getfloat("camera", lo), cp.getfloat("camera", hi)
+        if not (0.0 <= a < b <= 1.0) or b - a < 0.1:
+            raise SystemExit(f"camera.{lo} and camera.{hi} must be between 0 and 1, "
+                             f"with {lo} at least 0.1 less than {hi}")
     return cp
 
 
@@ -928,54 +937,80 @@ class App:
 
     # ---- preview rendering ------------------------------------------------
 
-    def render(self, frame_small, mask, pw, ph):
-        scale = self.preview_w / float(pw)
-        size = (self.preview_w, int(round(ph * scale)))
-        img = cv2.resize(frame_small, size, interpolation=cv2.INTER_NEAREST)
+    def render(self, full, mask):
+        """Preview: the whole (rotated) camera view with the area outside the
+        crop dimmed, the crop outlined in white, and the zones or counting
+        line drawn inside the crop. Optional right panel: the motion mask in
+        the same layout."""
+        v = self.view
+        s = self.preview_w / float(v["rw"])                 # full image -> preview
+        size = (self.preview_w, int(round(v["rh"] * s)))
         h = size[1]
+        X0, Y0 = int(round(v["x0"] * s)), int(round(v["y0"] * s))
+        X1, Y1 = int(round((v["x0"] + v["cw"]) * s)), int(round((v["y0"] + v["ch"]) * s))
+        k = v["cw"] * s / v["pw"]                            # processing pixel -> preview
+
+        def px(x):
+            return int(round(X0 + x * k))
+
+        def py(y):
+            return int(round(Y0 + y * k))
+
+        base = cv2.resize(full, size, interpolation=cv2.INTER_NEAREST)
+        img = (base * 0.35).astype(np.uint8)                # dim everything...
+        img[Y0:Y1, X0:X1] = base[Y0:Y1, X0:X1]              # ...except the crop
         if self.mode == "zones":
             z = self.zones
             for (x0, x1), active, fill in ((z.left, z.a, z.fa), (z.right, z.b, z.fb)):
-                X0, X1 = int(x0 * scale), int(x1 * scale) - 1
+                Z0, Z1 = px(x0), px(x1) - 1
                 color = (0, 255, 0) if active else (0, 220, 220)
                 if active:
                     overlay = img.copy()
-                    cv2.rectangle(overlay, (X0, 0), (X1, h), color, -1)
+                    cv2.rectangle(overlay, (Z0, Y0), (Z1, Y1 - 1), color, -1)
                     img = cv2.addWeighted(overlay, 0.3, img, 0.7, 0)
-                cv2.rectangle(img, (X0, 0), (X1, h - 15), color, 2 if active else 1)
-                cv2.putText(img, f"{int(fill * 100)}%", (X0 + 3, 14),
+                cv2.rectangle(img, (Z0, Y0), (Z1, Y1 - 1), color, 2 if active else 1)
+                cv2.putText(img, f"{int(fill * 100)}%", (Z0 + 3, Y0 + 14),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
-            cv2.putText(img, z.state, (size[0] // 2 - 25, 14), cv2.FONT_HERSHEY_SIMPLEX, 0.4,
-                        (255, 255, 255), 1)
+            cv2.putText(img, z.state, ((X0 + X1) // 2 - 25, Y0 + 14), cv2.FONT_HERSHEY_SIMPLEX,
+                        0.4, (255, 255, 255), 1)
         else:
             t = self.tracker
-            lx, le, re = int(t.line_x * scale), int(t.left_edge * scale), int(t.right_edge * scale)
-            cv2.line(img, (le, 0), (le, h), (0, 220, 220), 1)
-            cv2.line(img, (re, 0), (re, h), (0, 220, 220), 1)
-            cv2.line(img, (lx, 0), (lx, h), (0, 0, 255), 2)
+            for x, color, width in ((t.left_edge, (0, 220, 220), 1), (t.right_edge, (0, 220, 220), 1),
+                                    (t.line_x, (0, 0, 255), 2)):
+                cv2.line(img, (px(x), Y0), (px(x), Y1 - 1), color, width)
             for tr in t.tracks:
                 if tr.missing:
                     continue
-                x, y, w, hh = [int(v * scale) for v in tr.box]
-                cv2.rectangle(img, (x, y), (x + w, y + hh), (0, 255, 0), 1)
-                cv2.putText(img, f"{tr.id}{tr.side or '-'}", (x, max(10, y - 2)),
+                x, y, w, hh = tr.box
+                cv2.rectangle(img, (px(x), py(y)), (px(x + w), py(y + hh)), (0, 255, 0), 1)
+                cv2.putText(img, f"{tr.id}{tr.side or '-'}", (px(x), max(10, py(y) - 2)),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 255, 0), 1)
+        cv2.rectangle(img, (X0, Y0), (X1 - 1, Y1 - 1), (255, 255, 255), 1)  # crop outline
         arrow = "in ->" if self.direction_in == "left_to_right" else "<- in"
         td = self.today
         def tot(k):
             m = td["manual_" + k]
             return f"{td[k] + m}" + (f"({m}m)" if m else "")
         text = f"{arrow}  today in {tot('in')} out {tot('out')}  inside {self.occupancy}  {self.fps:.0f}fps"
-        cv2.rectangle(img, (0, h - 14), (size[0], h), (0, 0, 0), -1)
-        cv2.putText(img, text, (3, h - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (255, 255, 255), 1)
         if self.show_mask:
-            m = cv2.cvtColor(cv2.resize(mask, size, interpolation=cv2.INTER_NEAREST), cv2.COLOR_GRAY2BGR)
+            m = np.zeros_like(img)
+            if X1 > X0 and Y1 > Y0:
+                m[Y0:Y1, X0:X1] = cv2.cvtColor(
+                    cv2.resize(mask, (X1 - X0, Y1 - Y0), interpolation=cv2.INTER_NEAREST),
+                    cv2.COLOR_GRAY2BGR)
+            cv2.rectangle(m, (X0, Y0), (X1 - 1, Y1 - 1), (255, 255, 255), 1)
             if self.mode == "line":
-                min_side = int(math.sqrt(self.detector.min_area) * scale)
-                cv2.rectangle(m, (2, 2), (2 + min_side, 2 + min_side), (0, 0, 255), 1)
-                cv2.putText(m, "min size", (4 + min_side, 12), cv2.FONT_HERSHEY_SIMPLEX, 0.35,
-                            (0, 0, 255), 1)
+                min_side = int(math.sqrt(self.detector.min_area) * k)
+                cv2.rectangle(m, (X0 + 2, Y0 + 2), (X0 + 2 + min_side, Y0 + 2 + min_side),
+                              (0, 0, 255), 1)
+                cv2.putText(m, "min size", (X0 + 4 + min_side, Y0 + 12), cv2.FONT_HERSHEY_SIMPLEX,
+                            0.35, (0, 0, 255), 1)
             img = np.hstack([img, m])
+        # Status line in its own strip below the image, so it doesn't hide
+        # the bottom of the view.
+        bar = np.zeros((16, img.shape[1], 3), np.uint8)
+        cv2.putText(bar, text, (3, 12), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (255, 255, 255), 1)
+        img = np.vstack([img, bar])
         ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 70])
         if ok:
             self.preview.publish(buf.tobytes())
@@ -998,14 +1033,21 @@ class App:
         file_fps = (cap.get(cv2.CAP_PROP_FPS) or 30.0) if is_file else None
         rotate = cam.getint("rotate")
         rot_code = ROTATIONS[rotate]
-        # Size of the image after rotation; everything downstream (zones,
-        # line, direction, preview) works on the rotated image.
+        # Size of the image after rotation. Everything downstream (crop,
+        # zones, line, direction, preview) works on the rotated image.
         rw, rh = (fh, fw) if rotate in (90, 270) else (fw, fh)
+        # Only the cropped part of the image is analysed.
+        cx0 = int(round(cam.getfloat("crop_left") * rw))
+        cx1 = int(round(cam.getfloat("crop_right") * rw))
+        cy0 = int(round(cam.getfloat("crop_top") * rh))
+        cy1 = int(round(cam.getfloat("crop_bottom") * rh))
+        cw, ch = cx1 - cx0, cy1 - cy0
         pw = cam.getint("process_width")
-        ph = int(round(rh * pw / float(rw)))
-        pre_size = (ph, pw) if rotate in (90, 270) else (pw, ph)  # resize before rotating
-        log.info("Camera %dx%d, rotated %d, processing at %dx%d, mode = %s, in = %s",
-                 fw, fh, rotate, pw, ph, self.mode, self.direction_in)
+        ph = max(1, int(round(ch * pw / float(cw))))
+        self.view = {"rw": rw, "rh": rh, "x0": cx0, "y0": cy0, "cw": cw, "ch": ch, "pw": pw, "ph": ph}
+        log.info("Camera %dx%d, rotated %d, crop x %d-%d y %d-%d, processing at %dx%d, "
+                 "mode = %s, in = %s", fw, fh, rotate, cx0, cx1, cy0, cy1, pw, ph,
+                 self.mode, self.direction_in)
 
         c = self.cfg["counting"]
         self.detector = Detector(self.cfg, pw, ph)
@@ -1050,9 +1092,8 @@ class App:
             failures = 0
             frames += 1
 
-            small = cv2.resize(frame, pre_size, interpolation=cv2.INTER_AREA)
-            if rot_code is not None:
-                small = cv2.rotate(small, rot_code)
+            full = cv2.rotate(frame, rot_code) if rot_code is not None else frame
+            small = cv2.resize(full[cy0:cy1, cx0:cx1], (pw, ph), interpolation=cv2.INTER_AREA)
             gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
             if self.mode == "zones":
                 _, mask, _ = self.detector.detect(gray, presence=self.zones.busy())
@@ -1096,7 +1137,7 @@ class App:
 
             if self.preview and self.preview.wanted() and t - self.last_preview >= self.preview_interval:
                 self.last_preview = t
-                self.render(small, mask, pw, ph)
+                self.render(full, mask)
 
         cap.release()
         self.stop.set()
