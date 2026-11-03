@@ -191,6 +191,11 @@ helps:
 requests without the secret. After changing `Code.gs`, use Deploy > Manage
 deployments > edit > Version: New version, so the URL stays the same.
 
+Once the first upload succeeds, the preview page shows the sheet's name as a
+link ("Writing to sheet: ..."), so you can check which sheet a device is
+using. Opening the link still needs a Google account with access to the
+sheet.
+
 The script creates three tabs on the first upload:
 
 - **Log**: one row per event: `in` / `out` (camera), `manual_in` /
