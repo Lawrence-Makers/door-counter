@@ -93,6 +93,12 @@ def test_business_date():
           "04:00 starts a new day")
 
 
+def test_local_ip():
+    ip = C.local_ip()
+    check(ip is None or (ip.count(".") == 3 and not ip.startswith("127.")),
+          f"local address is a LAN address or None (got {ip})")
+
+
 def test_counting_and_reset(tmp):
     db = os.path.join(tmp, "a.db")
     _, app = make_app(db)
@@ -192,6 +198,7 @@ def main():
     logging.basicConfig(level=logging.ERROR)
     with tempfile.TemporaryDirectory() as tmp:
         test_business_date()
+        test_local_ip()
         test_counting_and_reset(tmp)
         test_corrections(tmp)
         test_cleanup(tmp)

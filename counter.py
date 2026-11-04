@@ -37,6 +37,7 @@ import logging
 import math
 import os
 import signal
+import socket
 import sqlite3
 import sys
 import threading
@@ -283,6 +284,25 @@ class Store:
         for r in rows:
             counts[r["event"]] = r["n"]
         return counts
+
+
+def local_ip(wait_seconds=0):
+    """This device's address on the local network, or None. Connecting a UDP
+    socket sends nothing; it just picks the interface that would be used.
+    At boot Wi-Fi may not be up yet, so this can wait for it."""
+    deadline = time.monotonic() + wait_seconds
+    while True:
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                s.connect(("192.0.2.1", 9))  # reserved test address, never contacted
+                ip = s.getsockname()[0]
+            if ip and not ip.startswith("127."):
+                return ip
+        except OSError:
+            pass
+        if time.monotonic() >= deadline:
+            return None
+        time.sleep(1)
 
 
 def make_event(kind, bd, occupancy, residual=None, fps=None, now=None):
@@ -1078,7 +1098,11 @@ class App:
         now = datetime.now()
         self.check_day(now)
         self.auto_prune()
-        self.store.record(make_event("start", self.bd, self.occupancy, now=now))
+        # The start event carries the device's address (e.g. "start
+        # 192.168.1.23") so the sheet shows where to find the preview page.
+        ip = local_ip(0 if is_file else 30)
+        start = "start " + ip if ip else "start (no network)"
+        self.store.record(make_event(start, self.bd, self.occupancy, now=now))
         if self.uploader:
             self.uploader.start()
 
