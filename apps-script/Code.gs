@@ -13,7 +13,8 @@
  *   Log    - one row per event: in, out (seen by the camera), manual_in,
  *            manual_out (+1 buttons on the counter's web page), reset,
  *            heartbeat, start (with the device's network address, e.g.
- *            "start 192.168.1.23", for finding its preview page)
+ *            "start 192.168.1.23", for finding its preview page), network
+ *            (the address, when it connects after starting or changes)
  *   Daily  - one row per location per day: totals, camera vs manual counts,
  *            the share the camera caught on its own, residual at 4am reset
  *   Status - one row per location: when it was last heard from, last event,
