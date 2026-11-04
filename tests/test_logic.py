@@ -93,6 +93,38 @@ def test_business_date():
           "04:00 starts a new day")
 
 
+def test_local_ip():
+    ip = C.local_ip()
+    check(ip is None or (ip.count(".") == 3 and not ip.startswith("127.")),
+          f"local address is a LAN address or None (got {ip})")
+
+
+def test_address_watch(tmp):
+    _, app = make_app(os.path.join(tmp, "ip.db"))
+    app.check_day(datetime(2026, 11, 1, 10, 0))
+    answers = iter([None, None, "192.168.1.23", "192.168.1.23", None, "192.168.1.23",
+                    "192.168.1.40"])
+    real = C.local_ip
+
+    def fake():
+        try:
+            return next(answers)
+        except StopIteration:
+            app.stop.set()
+            return None
+
+    C.local_ip = fake
+    try:
+        app.watch_address(None, interval=0)
+    finally:
+        C.local_ip = real
+    with app.store.lock:
+        rows = [r[0] for r in app.store.db.execute(
+            "SELECT event FROM events WHERE event LIKE 'network %' ORDER BY seq")]
+    check(rows == ["network 192.168.1.23", "network 192.168.1.40"],
+          "address logged once when it arrives and again only if it changes")
+
+
 def test_counting_and_reset(tmp):
     db = os.path.join(tmp, "a.db")
     _, app = make_app(db)
@@ -192,6 +224,8 @@ def main():
     logging.basicConfig(level=logging.ERROR)
     with tempfile.TemporaryDirectory() as tmp:
         test_business_date()
+        test_local_ip()
+        test_address_watch(tmp)
         test_counting_and_reset(tmp)
         test_corrections(tmp)
         test_cleanup(tmp)

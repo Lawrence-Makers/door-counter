@@ -200,7 +200,10 @@ The script creates three tabs on the first upload:
 
 - **Log**: one row per event: `in` / `out` (camera), `manual_in` /
   `manual_out` (+1 buttons), `heartbeat` (hourly, with frames per second),
-  `start` (counter started), `reset` (4am, with the residual). You can add
+  `start` (counter started, with the device's network address, e.g.
+  `start 192.168.1.23`, so you can find its preview page; if it started
+  before Wi-Fi was up, `start (no network)` and then a `network
+  192.168.1.23` row once connected, and again if the address changes), `reset` (4am, with the residual). You can add
   your own columns to the right of the existing ones.
 - **Daily**: one row per door per day (4am to 4am): total in/out, camera vs
   manual counts, camera share, residual at reset.

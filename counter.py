@@ -37,6 +37,7 @@ import logging
 import math
 import os
 import signal
+import socket
 import sqlite3
 import sys
 import threading
@@ -283,6 +284,19 @@ class Store:
         for r in rows:
             counts[r["event"]] = r["n"]
         return counts
+
+
+def local_ip():
+    """This device's address on the local network, or None if there is no
+    network. Connecting a UDP socket sends nothing; it just picks the
+    interface that would be used."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("192.0.2.1", 9))  # reserved test address, never contacted
+            ip = s.getsockname()[0]
+    except OSError:
+        return None
+    return ip if ip and not ip.startswith("127.") else None
 
 
 def make_event(kind, bd, occupancy, residual=None, fps=None, now=None):
@@ -1032,6 +1046,17 @@ class App:
 
     # ---- main loop --------------------------------------------------------
 
+    def watch_address(self, logged, interval=10):
+        """Log a "network <address>" row when the device gets an address it
+        hasn't logged yet: after booting without network, or if the router
+        gives it a new one. Losing the connection briefly logs nothing."""
+        while not self.stop.wait(interval):
+            ip = local_ip()
+            if ip and ip != logged:
+                self.store.record(make_event("network " + ip, self.bd, self.occupancy))
+                log.info("Network address: %s", ip)
+                logged = ip
+
     def run(self):
         cam = self.cfg["camera"]
         source = self.args.source or cam.get("source")
@@ -1078,7 +1103,16 @@ class App:
         now = datetime.now()
         self.check_day(now)
         self.auto_prune()
-        self.store.record(make_event("start", self.bd, self.occupancy, now=now))
+        # The start event carries the device's address (e.g. "start
+        # 192.168.1.23") so the sheet shows where to find the preview page.
+        # At boot Wi-Fi is often not up yet: then it logs "start (no
+        # network)", and a "network <address>" row follows once it connects.
+        ip = local_ip()
+        start = "start " + ip if ip else "start (no network)"
+        self.store.record(make_event(start, self.bd, self.occupancy, now=now))
+        if not is_file:
+            threading.Thread(target=self.watch_address, args=(ip,), daemon=True,
+                             name="address").start()
         if self.uploader:
             self.uploader.start()
 
